@@ -1,18 +1,30 @@
 # StockVista
 
-주식 관련 홈페이지 메인 페이지 시안과 정적 웹 소스입니다.
+주식 관련 홈페이지 메인 페이지를 **Python + Streamlit**으로 구현한 프로젝트입니다.
 
 ## 구성
 
-- `index.html` — 메인 홈페이지 구조
-- `styles.css` — 반응형 UI 스타일
-- `script.js` — 검색/모바일 메뉴 기본 인터랙션
-- `assets/homepage-preview.svg` — 생성한 메인 페이지 시각 시안
+- `app.py` — Streamlit 기반 메인 홈페이지
+- `requirements.txt` — Python 실행에 필요한 패키지
+- `index.html` / `styles.css` / `script.js` — 기존 정적 웹 버전
+- `assets/homepage-preview.svg` — 메인 페이지 시각 시안
 
-## 실행
+## Python으로 실행
 
-별도 빌드가 필요 없는 정적 사이트입니다. `index.html`을 브라우저로 열거나 GitHub Pages에 배포하면 됩니다.
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
 
-## 다음 단계
+실행 후 표시되는 로컬 주소를 Chrome에서 열면 됩니다.
+
+## 현재 기능
+
+- StockVista 메인 화면
+- 종목 검색 샘플 기능
+- KOSPI/KOSDAQ/USD/KRW/WTI 시장 카드
+- KOSPI 샘플 차트
+- 최신 투자 소식 영역
+- 반응형 Streamlit UI
 
 현재 시장 수치와 뉴스는 디자인용 샘플 데이터입니다. 실제 서비스로 사용하려면 주가 API, 기업정보/재무 API, 뉴스 API 등을 연결하면 됩니다.
