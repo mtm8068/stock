@@ -4,6 +4,8 @@ import plotly.graph_objects as go
 import pandas as pd
 from datetime import datetime
 from supabase import create_client
+from kis_api import KISClient
+from kis_live_panel import render_kis_panel
 
 st.set_page_config(
     page_title="Stock Insight",
@@ -96,6 +98,19 @@ def get_current_user():
     if supabase is None:
         return None
     return restore_supabase_session(supabase)
+
+
+@st.cache_resource
+def get_kis_client():
+    try:
+        appkey = st.secrets["KIS_APP_KEY"]
+        appsecret = st.secrets["KIS_APP_SECRET"]
+        paper = str(st.secrets.get("KIS_PAPER", "false")).lower() == "true"
+    except Exception:
+        return None
+    if not appkey or not appsecret:
+        return None
+    return KISClient(appkey, appsecret, paper=paper)
 
 
 def auth_sidebar(supabase):
@@ -299,7 +314,7 @@ def render_top_bar():
             else:
                 st.caption("검색 결과가 없습니다.")
     with quick_col:
-        st.markdown('<div class="search-hint">실시간 데이터는 yfinance 기준</div>', unsafe_allow_html=True)
+        st.markdown('<div class="search-hint">국내 실시간 호가·체결 데이터는 KIS API 연결 시 1초 갱신</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     index_map = [("KOSPI", "^KS11"), ("KOSDAQ", "^KQ11"), ("NASDAQ", "^IXIC")]
@@ -511,23 +526,26 @@ def get_timeframe_period(timeframe):
     return {"일봉": "6mo", "주봉": "2y", "월봉": "5y"}[timeframe]
 
 def render_orderbook(ticker_code, info):
-    st.caption("⚠️ 현재 yfinance에는 증권사식 실시간 호가잔량 API가 없어 아래 호가창은 현재가 기준 참고용 가격 레벨입니다. 실제 매수/매도 잔량은 증권사 API 연동 시 교체됩니다.")
+    if ticker_code.endswith((".KS", ".KQ")):
+        client = get_kis_client()
+        if client:
+            render_kis_panel(client, ticker_code.split(".")[0])
+            return
+    st.caption("KIS API가 연결되지 않아 참고용 호가 레벨을 표시합니다.")
     price = info["price"]
     tick = 0.5 if price < 1000 else 1 if price < 5000 else 5 if price < 10000 else 10
     levels = list(range(5, 0, -1))
-    ask = [{"호가": price + tick * n, "매도잔량": int(info["volume"] / max(n, 1) * 0.12)} for n in levels]
-    bid = [{"호가": price - tick * n, "매수잔량": int(info["volume"] / max(n, 1) * 0.10)} for n in levels]
+    ask = [{"호가": price + tick * n, "매도잔량": 0} for n in levels]
+    bid = [{"호가": price - tick * n, "매수잔량": 0} for n in levels]
     left, mid, right = st.columns([1, 1, 1])
     with left:
-        st.markdown("**매도호가**")
         st.dataframe(pd.DataFrame(ask), hide_index=True, use_container_width=True)
     with mid:
-        st.markdown("**현재가**")
         st.metric("체결 기준가", f"{price:,.2f}", f"{info['change_percent']:+.2f}%")
-        st.metric("체결강도(참고)", f"{100 + info['change_percent'] * 3:.1f}%")
+        st.metric("체결강도", "—")
     with right:
-        st.markdown("**매수호가**")
         st.dataframe(pd.DataFrame(bid), hide_index=True, use_container_width=True)
+
 
 def render_supply_demand(ticker_code, info):
     st.caption("외국인/기관 실제 일별 순매수 수급은 현재 데이터 공급원(yfinance)에서 제공하지 않아 임의 수치를 생성하지 않습니다. 아래는 기관 보유 정보가 제공될 때 표시되는 영역입니다.")
