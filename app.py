@@ -21,6 +21,15 @@ st.markdown("""
 .hero h1 { font-size:38px; letter-spacing:-.05em; margin:0 0 6px; }
 .hero p { color:#64748b; }
 .section-title { font-size:19px; font-weight:750; margin:22px 0 10px; }
+.topbar { background:#fff; border:1px solid #e5e7eb; border-radius:16px; padding:12px 14px; margin-bottom:14px; }
+.index-card { background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:12px 14px; min-height:92px; }
+.index-name { font-size:12px; color:#64748b; font-weight:700; }
+.index-value { font-size:20px; font-weight:800; margin-top:4px; }
+.index-meta { font-size:12px; margin-top:4px; }
+.search-hint { color:#64748b; font-size:12px; margin-top:4px; }
+.hts-panel { background:#fff; border:1px solid #e5e7eb; border-radius:16px; padding:16px; margin-bottom:16px; }
+.detail-tabs { margin-top:8px; }
+.sidebar-watch { padding:10px 0; border-bottom:1px solid #eef0f3; }
 .stock-header { background:#fff; border:1px solid #e5e7eb; border-radius:18px; padding:22px 24px; margin-bottom:16px; }
 .quote-card { background:#fff; border:1px solid #e5e7eb; border-radius:16px; padding:18px; min-height:120px; box-shadow:0 3px 14px rgba(15,23,42,.035); }
 .quote-name { font-weight:750; font-size:16px; }
@@ -256,6 +265,85 @@ def get_stock_info(ticker_code):
     }
 
 
+@st.cache_data(ttl=60)
+def get_market_index(ticker_code):
+    data = get_stock_data(ticker_code, "5d", "1d")
+    if data is None or data.empty:
+        return None
+    close = float(data["Close"].iloc[-1])
+    prev = float(data["Close"].iloc[-2]) if len(data) >= 2 else close
+    change = close - prev
+    pct = (change / prev * 100) if prev else 0
+    volume = int(data["Volume"].iloc[-1]) if "Volume" in data else 0
+    return {"value": close, "change": change, "pct": pct, "volume": volume, "turnover": close * volume}
+
+def render_top_bar():
+    st.markdown('<div class="topbar">', unsafe_allow_html=True)
+    search_col, quick_col = st.columns([3, 1])
+    with search_col:
+        query = st.text_input(
+            "종목 검색",
+            placeholder="종목명 또는 티커 검색 · 예: 삼성전자 / 005930.KS / NVDA",
+            label_visibility="collapsed",
+            key="global_stock_search",
+        ).strip()
+        if query:
+            results = [(name, code) for name, code in ALL_STOCKS.items()
+                       if query.lower() in name.lower() or query.lower() in code.lower()]
+            if results:
+                labels = [f"{name} · {code}" for name, code in results]
+                selected = st.selectbox("검색 결과", labels, label_visibility="collapsed", key="global_search_result")
+                selected_code = results[labels.index(selected)][1]
+                if st.button("종목 보기 →", key="global_search_go"):
+                    go_stock(CODE_TO_NAME.get(selected_code, selected_code), selected_code)
+            else:
+                st.caption("검색 결과가 없습니다.")
+    with quick_col:
+        st.markdown('<div class="search-hint">실시간 데이터는 yfinance 기준</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    index_map = [("KOSPI", "^KS11"), ("KOSDAQ", "^KQ11"), ("NASDAQ", "^IXIC")]
+    cols = st.columns(3)
+    for col, (name, code) in zip(cols, index_map):
+        item = get_market_index(code)
+        with col:
+            if item:
+                cls = "positive" if item["change"] >= 0 else "negative"
+                turnover = f"{item['turnover']/1e8:,.0f}억" if item["turnover"] else "—"
+                st.markdown(
+                    f'<div class="index-card"><div class="index-name">{name}</div>'
+                    f'<div class="index-value">{item["value"]:,.2f}</div>'
+                    f'<div class="index-meta {cls}">{item["change"]:+,.2f} ({item["pct"]:+.2f}%)</div>'
+                    f'<div class="muted">거래대금 약 {turnover}</div></div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(f'<div class="index-card"><div class="index-name">{name}</div><div class="muted">데이터 없음</div></div>', unsafe_allow_html=True)
+
+def render_sidebar_watchlist(user):
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("⭐ 관심종목")
+    if not user:
+        st.sidebar.caption("로그인하면 관심종목을 저장할 수 있습니다.")
+        return
+    items = get_watchlist(user.id)
+    if not items:
+        st.sidebar.caption("관심종목이 없습니다.")
+        return
+    for item in items[:8]:
+        info = get_stock_info(item["ticker"])
+        if info:
+            cls = "positive" if info["change"] >= 0 else "negative"
+            st.sidebar.markdown(
+                f'<div class="sidebar-watch"><b>{item["name"]}</b><br>'
+                f'<span class="{cls}">{info["price"]:,.2f} · {info["change_percent"]:+.2f}%</span></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.sidebar.caption(item["name"])
+        if st.sidebar.button("보기", key=f"side_wl_{item['ticker']}", use_container_width=True):
+            go_stock(item["name"], item["ticker"])
+
 def go_page(page_key):
     st.query_params.clear()
     st.query_params["page"] = page_key
@@ -308,6 +396,7 @@ def render_navigation():
 
     if not supabase:
         st.sidebar.info("Supabase 설정을 추가하면 로그인/관심종목 기능을 사용할 수 있습니다.")
+    render_sidebar_watchlist(user)
     st.sidebar.markdown("---")
     st.sidebar.caption("Python + Streamlit + Supabase")
     return current_page, user
@@ -447,6 +536,8 @@ def render_stock_detail(ticker_code, user):
         st.metric("등락률", f"{info['change_percent']:+.2f}%")
     with c4:
         st.metric("거래량", f"{info['volume']:,}")
+    turnover = info["price"] * info["volume"]
+    st.caption(f"당일 거래대금 추정: {turnover/1e8:,.0f}억원")
     st.markdown("---")
     period = st.selectbox("조회 기간", ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
                           index=2, key=f"period_{ticker_code}")
@@ -547,6 +638,7 @@ def render_search():
 
 supabase = get_supabase()
 page, user = render_navigation()
+render_top_bar()
 
 ticker_code = st.query_params.get("code")
 if ticker_code:
