@@ -289,8 +289,7 @@ def stock_card(name, ticker_code):
             f"{info['change']:+,.2f} ({info['change_percent']:+.2f}%)",
         )
     with c2:
-        if st.button("📈 상세보기", key=f"detail_{ticker_code}", use_container_width=True):
-            go_stock(name, ticker_code)
+        st.link_button("종목 상세 →", f"?code={ticker_code}", use_container_width=True)
 
 
 def render_navigation():
