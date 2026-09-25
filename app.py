@@ -12,6 +12,26 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+st.markdown("""
+<style>
+.stApp { background:#f6f8fb; }
+.block-container { max-width:1400px; padding-top:1.2rem; }
+[data-testid="stSidebar"] { background:#fff; border-right:1px solid #e5e7eb; }
+.hero { padding:30px; background:#fff; border:1px solid #e5e7eb; border-radius:22px; margin-bottom:20px; }
+.hero h1 { font-size:38px; letter-spacing:-.05em; margin:0 0 6px; }
+.hero p { color:#64748b; }
+.section-title { font-size:19px; font-weight:750; margin:22px 0 10px; }
+.stock-header { background:#fff; border:1px solid #e5e7eb; border-radius:18px; padding:22px 24px; margin-bottom:16px; }
+.quote-card { background:#fff; border:1px solid #e5e7eb; border-radius:16px; padding:18px; min-height:120px; box-shadow:0 3px 14px rgba(15,23,42,.035); }
+.quote-name { font-weight:750; font-size:16px; }
+.quote-price { font-size:25px; font-weight:800; margin-top:7px; }
+.muted { color:#64748b; font-size:12px; }
+.positive { color:#dc2626; font-weight:700; }
+.negative { color:#2563eb; font-weight:700; }
+div[data-testid="stButton"] > button { border-radius:10px; }
+</style>
+""", unsafe_allow_html=True)
+
 KOREA_STOCKS = {
     "삼성전자": "005930.KS",
     "SK하이닉스": "000660.KS",
@@ -237,12 +257,14 @@ def get_stock_info(ticker_code):
 
 
 def go_page(page_key):
+    st.query_params.clear()
     st.query_params["page"] = page_key
     st.rerun()
 
 
 def go_stock(name, ticker_code):
-    st.query_params.from_dict({"page": "종목", "code": ticker_code})
+    st.query_params.clear()
+    st.query_params["code"] = ticker_code
     st.rerun()
 
 
@@ -251,7 +273,14 @@ def stock_card(name, ticker_code):
     if info is None:
         st.warning(f"{name}: 데이터를 가져오지 못했습니다.")
         return
-    st.markdown(f"### {name}")
+    st.markdown(
+        f'<div class="quote-card"><div class="quote-name">{name}</div>'
+        f'<div class="quote-price">{info["price"]:,.2f}</div>'
+        f'<div class="{"positive" if info["change"] >= 0 else "negative"}">'
+        f'{info["change"]:+,.2f} ({info["change_percent"]:+.2f}%)</div>'
+        f'<div class="muted">{ticker_code}</div></div>',
+        unsafe_allow_html=True,
+    )
     c1, c2 = st.columns([2, 1])
     with c1:
         st.metric(
@@ -392,8 +421,7 @@ def render_watch_button(user, stock_name, ticker_code):
 
 def render_stock_detail(ticker_code, user):
     stock_name = CODE_TO_NAME.get(ticker_code, ticker_code)
-    st.title(f"📊 {stock_name}")
-    st.caption(f"Ticker: {ticker_code}")
+    st.markdown(f'<div class="stock-header"><div class="muted">{market} · {ticker_code}</div><div style="font-size:30px;font-weight:800">{stock_name}</div></div>', unsafe_allow_html=True)
     render_watch_button(user, stock_name, ticker_code)
     info = get_stock_info(ticker_code)
     if info is None:
@@ -464,9 +492,7 @@ def render_watchlist(user):
 
 
 def render_home():
-    st.title("📈 Stock Insight")
-    st.subheader("주식 정보를 한 곳에서")
-    st.write("국내주식과 미국주식의 가격, 차트, 거래량, 기업정보와 뉴스를 확인합니다.")
+    st.markdown('<div class="hero"><h1>Stock Insight</h1><p>국내·미국 주식의 시세, 차트, 기업정보와 뉴스를 한 화면에서 확인하세요.</p></div>', unsafe_allow_html=True)
     st.markdown("---")
     st.header("🔥 주요 종목")
     cols = st.columns(3)
@@ -512,11 +538,12 @@ def render_search():
 supabase = get_supabase()
 page, user = render_navigation()
 
-if page == "종목":
-    ticker_code = st.query_params.get("code", "AAPL")
+ticker_code = st.query_params.get("code")
+if ticker_code:
     if ticker_code not in ALL_STOCKS.values():
-        ticker_code = "AAPL"
-    render_stock_detail(ticker_code, user)
+        st.error("존재하지 않는 종목 코드입니다.")
+    else:
+        render_stock_detail(ticker_code, user)
 elif page == "홈":
     render_home()
 elif page == "국내주식":
