@@ -507,6 +507,54 @@ def render_watch_button(user, stock_name, ticker_code):
             st.error(message)
 
 
+def get_timeframe_period(timeframe):
+    return {"일봉": "6mo", "주봉": "2y", "월봉": "5y"}[timeframe]
+
+def render_orderbook(ticker_code, info):
+    st.caption("⚠️ 현재 yfinance에는 증권사식 실시간 호가잔량 API가 없어 아래 호가창은 현재가 기준 참고용 가격 레벨입니다. 실제 매수/매도 잔량은 증권사 API 연동 시 교체됩니다.")
+    price = info["price"]
+    tick = 0.5 if price < 1000 else 1 if price < 5000 else 5 if price < 10000 else 10
+    levels = list(range(5, 0, -1))
+    ask = [{"호가": price + tick * n, "매도잔량": int(info["volume"] / max(n, 1) * 0.12)} for n in levels]
+    bid = [{"호가": price - tick * n, "매수잔량": int(info["volume"] / max(n, 1) * 0.10)} for n in levels]
+    left, mid, right = st.columns([1, 1, 1])
+    with left:
+        st.markdown("**매도호가**")
+        st.dataframe(pd.DataFrame(ask), hide_index=True, use_container_width=True)
+    with mid:
+        st.markdown("**현재가**")
+        st.metric("체결 기준가", f"{price:,.2f}", f"{info['change_percent']:+.2f}%")
+        st.metric("체결강도(참고)", f"{100 + info['change_percent'] * 3:.1f}%")
+    with right:
+        st.markdown("**매수호가**")
+        st.dataframe(pd.DataFrame(bid), hide_index=True, use_container_width=True)
+
+def render_supply_demand(ticker_code, info):
+    st.caption("외국인/기관 실제 일별 순매수 수급은 현재 데이터 공급원(yfinance)에서 제공하지 않아 임의 수치를 생성하지 않습니다. 아래는 기관 보유 정보가 제공될 때 표시되는 영역입니다.")
+    profile = get_stock_profile(ticker_code)
+    institutional = profile.get("heldPercentInstitutions")
+    insiders = profile.get("heldPercentInsiders")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.metric("기관 보유비중", f"{float(institutional)*100:.2f}%" if institutional is not None else "데이터 없음")
+    with c2:
+        st.metric("내부자 보유비중", f"{float(insiders)*100:.2f}%" if insiders is not None else "데이터 없음")
+    st.info("실제 외국인/기관 순매수·순매도 금액과 누적 수급을 표시하려면 KRX 또는 증권사 Open API 연동이 필요합니다.")
+
+def render_turnover_rankings():
+    rows = []
+    for name, code in ALL_STOCKS.items():
+        info = get_stock_info(code)
+        if info:
+            rows.append({"종목": name, "티커": code, "현재가": info["price"], "등락률": info["change_percent"], "거래량": info["volume"], "거래대금 추정": info["price"] * info["volume"]})
+    if not rows:
+        st.info("거래대금 데이터를 가져오지 못했습니다.")
+        return
+    df = pd.DataFrame(rows).sort_values("거래대금 추정", ascending=False).reset_index(drop=True)
+    df["거래대금 추정"] = (df["거래대금 추정"] / 1e8).round(1).map(lambda x: f"{x:,.1f}억")
+    df["현재가"] = df["현재가"].map(lambda x: f"{x:,.2f}")
+    df["등락률"] = df["등락률"].map(lambda x: f"{x:+.2f}%")
+    st.dataframe(df, hide_index=True, use_container_width=True)
 def render_stock_detail(ticker_code, user):
     stock_name = CODE_TO_NAME.get(ticker_code, ticker_code)
     market = "국내주식" if ticker_code.endswith((".KS", ".KQ")) else "미국주식"
@@ -539,13 +587,22 @@ def render_stock_detail(ticker_code, user):
     turnover = info["price"] * info["volume"]
     st.caption(f"당일 거래대금 추정: {turnover/1e8:,.0f}억원")
     st.markdown("---")
-    period = st.selectbox("조회 기간", ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
-                          index=2, key=f"period_{ticker_code}")
+    timeframe = st.radio("차트 주기", ["일봉", "주봉", "월봉"], horizontal=True, key=f"timeframe_{ticker_code}")
+    period = get_timeframe_period(timeframe)
     chart_type = st.radio("차트", ["캔들", "라인"], horizontal=True, key=f"chart_{ticker_code}")
-    st.subheader("📈 주가 차트")
-    render_price_chart(ticker_code, period, chart_type)
-    st.subheader("📊 거래량")
-    render_volume_chart(ticker_code, period)
+    tab_chart, tab_order, tab_supply, tab_rank = st.tabs(["📈 차트", "📒 호가창", "🌐 수급", "💰 거래대금 순위"])
+    with tab_chart:
+        st.subheader(f"{timeframe} 주가 차트")
+        render_price_chart(ticker_code, period, chart_type)
+        st.subheader("📊 거래량")
+        render_volume_chart(ticker_code, period)
+    with tab_order:
+        render_orderbook(ticker_code, info)
+    with tab_supply:
+        render_supply_demand(ticker_code, info)
+    with tab_rank:
+        render_turnover_rankings()
+    st.markdown("---")
     st.subheader("🏢 기업/재무 정보")
     render_profile(ticker_code)
     st.markdown("---")
@@ -600,6 +657,9 @@ def render_home():
     for col, (name, code) in zip(cols, [("삼성전자", "005930.KS"), ("NVIDIA", "NVDA"), ("Apple", "AAPL")]):
         with col:
             stock_card(name, code)
+    st.markdown("---")
+    st.header("💰 거래대금 순위")
+    render_turnover_rankings()
     st.markdown("---")
     st.header("빠른 이동")
     c1, c2, c3 = st.columns(3)
