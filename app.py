@@ -421,7 +421,19 @@ def render_watch_button(user, stock_name, ticker_code):
 
 def render_stock_detail(ticker_code, user):
     stock_name = CODE_TO_NAME.get(ticker_code, ticker_code)
-    st.markdown(f'<div class="stock-header"><div class="muted">{market} · {ticker_code}</div><div style="font-size:30px;font-weight:800">{stock_name}</div></div>', unsafe_allow_html=True)
+    market = "국내주식" if ticker_code.endswith((".KS", ".KQ")) else "미국주식"
+    info = get_stock_info(ticker_code)
+    if info is None:
+        st.error("종목 데이터를 가져오지 못했습니다.")
+        return
+    change_class = "positive" if info["change"] >= 0 else "negative"
+    st.markdown(
+        f'<div class="stock-header"><div class="muted">{market} · {ticker_code}</div>'
+        f'<div style="font-size:30px;font-weight:800">{stock_name}</div>'
+        f'<div style="font-size:28px;font-weight:800;margin-top:8px">{info["price"]:,.2f}</div>'
+        f'<div class="{change_class}">{info["change"]:+,.2f} ({info["change_percent"]:+.2f}%)</div></div>',
+        unsafe_allow_html=True,
+    )
     render_watch_button(user, stock_name, ticker_code)
     info = get_stock_info(ticker_code)
     if info is None:
@@ -454,8 +466,7 @@ def render_stock_detail(ticker_code, user):
     cols = st.columns(3)
     for col, (name, code) in zip(cols, [("삼성전자", "005930.KS"), ("NVIDIA", "NVDA"), ("Apple", "AAPL")]):
         with col:
-            if st.button(name, key=f"quick_{code}", use_container_width=True):
-                go_stock(name, code)
+            st.link_button(name, f"?code={code}", use_container_width=True)
 
 
 def render_watchlist(user):
